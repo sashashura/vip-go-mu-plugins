@@ -1003,7 +1003,8 @@ class Health {
 				return $actual_settings;
 			}
 
-			$desired_settings = $indexable->build_settings();
+			$mapping = $indexable->generate_mapping();
+			$desired_settings = $mapping['settings'];
 
 			// We only monitor certain settings
 			$actual_settings_to_check  = self::limit_index_settings_to_keys( $actual_settings, self::INDEX_SETTINGS_HEALTH_MONITORED_KEYS );
