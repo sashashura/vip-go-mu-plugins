@@ -2,6 +2,7 @@
 
 namespace Automattic\VIP\WP_Parsely_Integration;
 
+use Automattic\Test\Constant_Mocker;
 use Automattic\VIP\WP_Parsely_Integration\Parsely_Loader_Info;
 use Parsely\UI\Row_Actions;
 use WP_UnitTestCase;
@@ -11,17 +12,30 @@ function test_mode() {
 	return $mode ?: 'disabled';
 }
 
+/**
+ * @runTestsInSeparateProcesses
+ * @preserveGlobalState disabled
+ */
+
 class MU_Parsely_Integration_Test extends WP_UnitTestCase {
 	protected static $test_mode;
 
 	public static function setUpBeforeClass(): void {
+		parent::setUpBeforeClass();
+
 		self::$test_mode = test_mode();
-		if ( 'disabled' !== self::$test_mode ) {
-			echo 'Running Parsely Integration Tests in mode: ' . esc_html( self::$test_mode ) . "\n";
-		}
+		echo 'Running Parsely Integration Tests in mode: ' . esc_html( self::$test_mode ) . "\n";
+	}
+
+	public function setUp(): void {
+		parent::setUp();
+
+		Constant_Mocker::clear();
 	}
 
 	public function test_parsely_loader_info_defaults() {
+		\Automattic\VIP\WP_Parsely_Integration\maybe_load_plugin();
+
 		// Can only reliably test the defaults in "disabled" mode.
 		if ( 'disabled' === self::$test_mode ) {
 			$this->assertFalse( Parsely_Loader_Info::is_active() );
@@ -53,14 +67,8 @@ class MU_Parsely_Integration_Test extends WP_UnitTestCase {
 		$this->assertFalse( \Automattic\VIP\WP_Parsely_Integration\is_queued_for_activation() );
 	}
 
-	public function test_has_maybe_load_plugin_action() {
-		$this->assertSame(
-			1,
-			has_action( 'plugins_loaded', __NAMESPACE__ . '\maybe_load_plugin' )
-		);
-	}
-
 	public function test_parsely_class_existance() {
+		\Automattic\VIP\WP_Parsely_Integration\maybe_load_plugin();
 		$class_should_exist = 'disabled' !== self::$test_mode;
 
 		if ( $class_should_exist ) {
@@ -71,15 +79,64 @@ class MU_Parsely_Integration_Test extends WP_UnitTestCase {
 		}
 	}
 
-	public function test_parsely_global() {
-		global $parsely;
+	public function test_parsely_instance() {
+		$result = \Automattic\VIP\WP_Parsely_Integration\maybe_load_plugin();
 
-		$instance_should_exist = 'disabled' !== self::$test_mode;
-		$this->assertSame( $instance_should_exist, isset( $parsely ) );
+		if ( 'disabled' === self::$test_mode ) {
+			$this->assertNull( $result );
+			return;
+		}
+		$this->assertEquals( 'Parsely\Parsely', get_class( $result ) );
 	}
 
 	public function test_bootstrap_modes() {
 		\Automattic\VIP\WP_Parsely_Integration\maybe_load_plugin();
+		switch ( self::$test_mode ) {
+			case 'disabled':
+				$this->assertFalse( has_filter( 'wpvip_parsely_load_mu' ) );
+				$this->assertFalse( get_option( '_wpvip_parsely_mu' ) );
+				$this->assertFalse(
+					Parsely_Loader_Info::is_active(),
+					'Expecting the plugin to be inactive'
+				);
+				$this->assertEquals( Parsely_Loader_Info::INTEGRATION_TYPE_NONE, Parsely_Loader_Info::get_integration_type() );
+				break;
+			case 'filter_enabled':
+				$this->assertTrue( has_filter( 'wpvip_parsely_load_mu' ) );
+				$this->assertFalse( get_option( '_wpvip_parsely_mu' ) );
+				$this->assertTrue(
+					Parsely_Loader_Info::is_active(),
+					'Expecting wp-parsely plugin to be enabled by the filter.'
+				);
+				$this->assertEquals( Parsely_Loader_Info::INTEGRATION_TYPE_MUPLUGINS, Parsely_Loader_Info::get_integration_type() );
+				break;
+			case 'option_enabled':
+				$this->assertFalse( has_filter( 'wpvip_parsely_load_mu' ) );
+				$this->assertSame( '1', get_option( '_wpvip_parsely_mu' ) );
+				$this->assertTrue(
+					Parsely_Loader_Info::is_active(),
+					'Expecting wp-parsely plugin to be enabled by the option.'
+				);
+				$this->assertEquals( Parsely_Loader_Info::INTEGRATION_TYPE_MUPLUGINS_SILENT, Parsely_Loader_Info::get_integration_type() );
+				break;
+			case 'filter_and_option_enabled':
+				$this->assertTrue( has_filter( 'wpvip_parsely_load_mu' ) );
+				$this->assertSame( '1', get_option( '_wpvip_parsely_mu' ) );
+				$this->assertTrue(
+					Parsely_Loader_Info::is_active(),
+					'Expecting wp-parsely plugin to be enabled by the filter overriding the option.'
+				);
+				$this->assertEquals( Parsely_Loader_Info::INTEGRATION_TYPE_MUPLUGINS, Parsely_Loader_Info::get_integration_type() );
+				break;
+			default:
+				$this->fail( 'Invalid test mode specified: ' . self::$test_mode );
+		}
+	}
+
+	public function test_bootstrap_modes_for_fedramp() {
+		Constant_Mocker::define( 'VIP_IS_FEDRAMP', '1' );
+		\Automattic\VIP\WP_Parsely_Integration\maybe_load_plugin();
+
 		switch ( self::$test_mode ) {
 			case 'disabled':
 				$this->assertFalse( has_filter( 'wpvip_parsely_load_mu' ) );
@@ -91,19 +148,19 @@ class MU_Parsely_Integration_Test extends WP_UnitTestCase {
 				$this->assertTrue( has_filter( 'wpvip_parsely_load_mu' ) );
 				$this->assertFalse( get_option( '_wpvip_parsely_mu' ) );
 				$this->assertTrue( Parsely_Loader_Info::is_active() );
-				$this->assertEquals( Parsely_Loader_Info::INTEGRATION_TYPE_SELF_MANAGED, Parsely_Loader_Info::get_integration_type() );
+				$this->assertEquals( Parsely_Loader_Info::INTEGRATION_TYPE_MUPLUGINS, Parsely_Loader_Info::get_integration_type() );
 				break;
 			case 'option_enabled':
 				$this->assertFalse( has_filter( 'wpvip_parsely_load_mu' ) );
 				$this->assertSame( '1', get_option( '_wpvip_parsely_mu' ) );
-				$this->assertTrue( Parsely_Loader_Info::is_active() );
-				$this->assertEquals( Parsely_Loader_Info::INTEGRATION_TYPE_SELF_MANAGED, Parsely_Loader_Info::get_integration_type() );
+				$this->assertFalse( Parsely_Loader_Info::is_active() );
+				$this->assertEquals( Parsely_Loader_Info::INTEGRATION_TYPE_NONE, Parsely_Loader_Info::get_integration_type() );
 				break;
 			case 'filter_and_option_enabled':
 				$this->assertTrue( has_filter( 'wpvip_parsely_load_mu' ) );
 				$this->assertSame( '1', get_option( '_wpvip_parsely_mu' ) );
 				$this->assertTrue( Parsely_Loader_Info::is_active() );
-				$this->assertEquals( Parsely_Loader_Info::INTEGRATION_TYPE_SELF_MANAGED, Parsely_Loader_Info::get_integration_type() );
+				$this->assertEquals( Parsely_Loader_Info::INTEGRATION_TYPE_MUPLUGINS, Parsely_Loader_Info::get_integration_type() );
 				break;
 			default:
 				$this->fail( 'Invalid test mode specified: ' . self::$test_mode );
@@ -111,6 +168,7 @@ class MU_Parsely_Integration_Test extends WP_UnitTestCase {
 	}
 
 	public function test_parsely_ui_hooks() {
+		\Automattic\VIP\WP_Parsely_Integration\maybe_load_plugin();
 		$repeated_metas_expected = 'option_enabled' == self::$test_mode ? 10 : false;
 		$this->assertSame( $repeated_metas_expected, has_action( 'option_parsely', 'Automattic\VIP\WP_Parsely_Integration\alter_option_use_repeated_metas' ) );
 
@@ -126,6 +184,7 @@ class MU_Parsely_Integration_Test extends WP_UnitTestCase {
 	}
 
 	public function test_alter_option_use_repeated_metas() {
+		\Automattic\VIP\WP_Parsely_Integration\maybe_load_plugin();
 		$options = alter_option_use_repeated_metas();
 		$this->assertSame( array( 'meta_type' => 'repeated_metas' ), $options );
 
@@ -143,6 +202,8 @@ class MU_Parsely_Integration_Test extends WP_UnitTestCase {
 		if ( 'disabled' === self::$test_mode ) {
 			$this->markTestSkipped();
 		}
+
+		\Automattic\VIP\WP_Parsely_Integration\maybe_load_plugin();
 
 		$post = [
 			'post_title'   => 'Testing unprotected posts',
@@ -163,6 +224,8 @@ class MU_Parsely_Integration_Test extends WP_UnitTestCase {
 		if ( 'disabled' === self::$test_mode ) {
 			$this->markTestSkipped();
 		}
+
+		\Automattic\VIP\WP_Parsely_Integration\maybe_load_plugin();
 
 		$post = [
 			'post_title'    => 'Testing protected posts',
@@ -191,6 +254,8 @@ class MU_Parsely_Integration_Test extends WP_UnitTestCase {
 
 	private function get_post_metadata( int $post_id ) {
 		global $parsely;
+
+		\Automattic\VIP\WP_Parsely_Integration\maybe_load_plugin();
 
 		$options = array_merge( [ 'apikey' => 'testing123' ], $parsely->get_options() );
 		return $parsely->construct_parsely_metadata( $options, get_post( $post_id ) );

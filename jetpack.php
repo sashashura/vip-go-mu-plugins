@@ -129,6 +129,12 @@ function vip_jetpack_load() {
 		return;
 	}
 
+	if ( defined( 'VIP_IS_FEDRAMP' ) && constant( 'VIP_IS_FEDRAMP' ) ) {
+		// Do not load Jetpack on FedRAMP sites.
+		define( 'VIP_JETPACK_LOADED_VERSION', 'none' );
+		return;
+	}
+
 	$jetpack_to_test = array();
 
 	if ( defined( 'WPCOM_VIP_JETPACK_LOCAL' ) && WPCOM_VIP_JETPACK_LOCAL ) {

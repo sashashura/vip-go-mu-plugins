@@ -40,6 +40,10 @@ final class Parsely_Loader_Info {
 	private static string $version;
 	private static array $parsely_options;
 
+	public static function has_run(): bool {
+		return isset( self::$active );
+	}
+
 	public static function is_active(): bool {
 		return isset( self::$active ) ? self::$active : false;
 	}
@@ -130,11 +134,14 @@ function is_queued_for_activation() {
  * To prevent it from loading even when this condition is met, add this line:
  *
  * add_filter( 'wpvip_parsely_load_mu', '__return_false' );
+ * @return \Parsely\Parsely|null The global instance (if loaded)
  */
-function maybe_load_plugin() {
+function maybe_load_plugin(): ?\Parsely\Parsely {
+	global $parsely;
+
 	// If the user is activating the plugin in this request, do not try to load wp-parsely via mu.
 	if ( is_queued_for_activation() ) {
-		return;
+		return $parsely;
 	}
 
 	// Self-managed integration: The plugin exists on the site and is being loaded already.
@@ -148,7 +155,7 @@ function maybe_load_plugin() {
 			Parsely_Loader_Info::set_version( $parsely_options['plugin_version'] );
 		}
 
-		return;
+		return $parsely;
 	}
 
 	$option_load_status   = get_option( '_wpvip_parsely_mu', null );
@@ -156,13 +163,19 @@ function maybe_load_plugin() {
 
 	$should_load            = true === $filtered_load_status || '1' === $option_load_status;
 	$should_prevent_loading = false === $filtered_load_status || '0' === $option_load_status;
+	$vip_is_fedramp         = defined( 'VIP_IS_FEDRAMP' ) && constant( 'VIP_IS_FEDRAMP' );
+
+	if ( $vip_is_fedramp && ! $filtered_load_status ) {
+		// FedRAMP sites should only load the mu-plugins version of wp-parsely via the filter.
+		$should_prevent_loading = true;
+	}
 
 	// No integration: The site has not enabled parsely.
 	if ( ! $should_load || $should_prevent_loading ) {
 		Parsely_Loader_Info::set_active( false );
 		Parsely_Loader_Info::set_integration_type( Parsely_Loader_Info::INTEGRATION_TYPE_NONE );
 
-		return;
+		return $parsely;
 	}
 
 	// Enqueuing the disabling of Parse.ly features when the plugin is loaded (after the `plugins_loaded` hook)
@@ -213,7 +226,7 @@ function maybe_load_plugin() {
 			require_once $vip_parsely_plugin;
 		}
 
-		return;
+		return $parsely;
 	}
 }
 add_action( 'plugins_loaded', __NAMESPACE__ . '\maybe_load_plugin', 1 );
