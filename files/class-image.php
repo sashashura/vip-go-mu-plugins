@@ -165,13 +165,29 @@ class Image {
 	/**
 	 * Returns the images filesize (in bytes).
 	 *
-	 * Since we don't actually create new files for different attachment sizes,
-	 * the filesize on each entry in the attachment sizes array will just be that of the original.
+	 * We don't actually create new files for different attachment sizes,
+	 * so the filesize on each entry is instead an estimate based on pixel count difference.
 	 *
 	 * @return int
 	 */
 	public function get_filesize() {
-		return (int) $this->filesize;
+		$filesize = (int) $this->filesize;
+
+		// We don't actually create new files for different attachment sizes,
+		// so the filesize on each entry is instead an estimate based on pixel count difference.
+		if ( $this->is_resized ) {
+			$original_pixels = $this->original_height * $this->original_width;
+			$new_pixels      = $this->height * $this->width;
+
+			// Example: Original 100mb image w/ 1000 pixels, cropped to 250 pixels.
+			// pixel diff is 25%, estimated size is 100mb * .25 = 25mb.
+			$pixel_diff     = ( $new_pixels / $original_pixels ) * 100;
+			$estimated_size = $filesize * ( $diff / 100 );
+
+			return $estimated_size;
+		}
+
+		return $filesize;
 	}
 
 	/**
